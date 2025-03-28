@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>智能纸盒报价系统</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 20px auto; padding: 20px }
+        .container { display: grid; grid-template-columns: 1fr 1fr; gap: 30px }
+        .input-group { margin-bottom: 15px }
+        input { width: 200px; padding: 5px; margin-right: 10px }
+        #preview { width: 500px; height: 400px; border: 1px solid #ccc; position: relative }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left }
+        tr:hover { background-color: #f5f5f5; cursor: pointer }
+        .selected { background-color: #e6f3ff }
+        .result { margin-top: 20px; padding: 15px; background: #f8f9fa }
+        .price-column { display: none } /* 隐藏单价列 */
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div>
+            <h2>参数输入</h2>
+            <div class="input-group">
+                <label>长(cm): <input type="number" id="length" step="0.1"></label>
+                <label>宽(cm): <input type="number" id="width" step="0.1"></label>
+                <label>高(cm): <input type="number" id="height" step="0.1"></label>
+            </div>
+            
+            <h3>报价结果</h3>
+            <div class="result" id="result"></div>
+
+            <h3>材质选择</h3>
+            <div id="priceTable"></div>
+        </div>
+        <div>
+            <h2>3D预览</h2>
+            <div id="preview"></div>
+        </div>
+    </div>
+
+<script>
+// 完整材质数据
+const materials = [
+    // 3层B瓦
+    {category:"3层厚度（B瓦）", name:"A3A", price:1.4},
+    {category:"3层厚度（B瓦）", name:"K3K", price:1.7},
+    {category:"3层厚度（B瓦）", name:"K6K", price:1.8},
+    {category:"3层厚度（B瓦）", name:"K8K", price:2},
+    {category:"3层厚度（B瓦）", name:"S5S", price:2.7},
+    {category:"3层厚度（B瓦）", name:"L5L", price:3.3},
+    // 5层BC瓦
+    {category:"5层厚度（BC瓦）", name:"A=A", price:2},
+    {category:"5层厚度（BC瓦）", name:"A636A", price:2.2},
+    {category:"5层厚度（BC瓦）", name:"K=K", price:2.3},
+    {category:"5层厚度（BC瓦）", name:"K636K", price:2.4},
+    {category:"5层厚度（BC瓦）", name:"K838K", price:2.7},
+    {category:"5层厚度（BC瓦）", name:"K939K", price:2.9},
+    {category:"5层厚度（BC瓦）", name:"S=S", price:3.3},
+    {category:"5层厚度（BC瓦）", name:"L=L", price:4},
+    // 3层E瓦
+    {category:"3层厚度（E瓦）", name:"A9A", price:1.6},
+    {category:"3层厚度（E瓦）", name:"K9K", price:1.8},
+    {category:"3层厚度（E瓦）", name:"K9K+", price:1.9},
+    {category:"3层厚度（E瓦）", name:"S5S", price:2.9},
+    {category:"3层厚度（E瓦）", name:"L5L", price:3.5}
+];
+
+// 3D场景设置
+let scene, camera, renderer, box, controls;
+function init3D() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, 500/400, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(500, 400);
+    document.getElementById('preview').appendChild(renderer.domElement);
+
+    // 初始视角
+    camera.position.set(2, 2, 2);
+    camera.lookAt(0, 0, 0);
+
+    // 灯光
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(5,5,5);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040));
+
+    // 控制器
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    animate();
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+// 更新3D模型（带边线）
+function updateModel(l, w, h) {
+    // 清除旧模型
+    if(box) {
+        scene.remove(box.mesh);
+        scene.remove(box.wireframe);
+    }
+
+    // 创建新模型
+    const geometry = new THREE.BoxGeometry(l/10, w/10, h/10);
+    
+    // 主体材质
+    const material = new THREE.MeshPhongMaterial({ 
+        color: 0xffff00,
+        shininess: 100
+    });
+    
+    // 边线材质
+    const edges = new THREE.EdgesGeometry(geometry);
+    const lineMaterial = new THREE.LineBasicMaterial({ 
+        color: 0x000000,
+        linewidth: 2
+    });
+
+    // 创建组合对象
+    box = {
+        mesh: new THREE.Mesh(geometry, material),
+        wireframe: new THREE.LineSegments(edges, lineMaterial)
+    };
+    
+    scene.add(box.mesh);
+    scene.add(box.wireframe);
+}
+
+// 创建价格表（隐藏单价列）
+function createPriceTable() {
+    let html = `<table>
+        <tr><th>材质分类</th><th>材质名称</th><th class="price-column">单价</th></tr>`;
+    
+    materials.forEach(m => {
+        html += `<tr onclick="selectMaterial(this, ${m.price})">
+            <td>${m.category}</td>
+            <td>${m.name}</td>
+            <td class="price-column">${m.price}</td>
+        </tr>`;
+    });
+    html += '</table>';
+    document.getElementById('priceTable').innerHTML = html;
+}
+
+let selectedPrice = 0;
+function selectMaterial(row, price) {
+    document.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+    row.classList.add('selected');
+    selectedPrice = price;
+    calculate();
+}
+
+// 完整计算公式
+function calculate() {
+    const l = parseFloat(document.getElementById('length').value) || 0;
+    const w = parseFloat(document.getElementById('width').value) || 0;
+    const h = parseFloat(document.getElementById('height').value) || 0;
+    
+    updateModel(l, w, h);
+    
+    // 平口纸箱
+    const pingkou = ((l + w +5) * (w + h +2.5) *2 * selectedPrice *0.155)/1000;
+    
+    // 飞机盒
+    const feiji = (
+        ((3*h + 2*w)/2.54 + 2) * 
+        ((4*h + l)/2.54 + 2) * 
+        selectedPrice /1000 + 0.05
+    ).toFixed(2);
+    const feiji_mold = (
+        ((3*h + 2*w)/2.54 + 2) * 
+        ((4*h + l)/2.54 + 2) * 0.2
+    ).toFixed(2);
+    
+    // 扣底盒
+    const koudi = (
+        ((l + w)/2.54*2 + 3.5) * 
+        ((1.5*w/2.54) + h/2.54 + 4) * 
+        selectedPrice /1000 + 0.1
+    ).toFixed(2);
+    const koudi_mold = (
+        ((l + w)/2.54*2 + 3.5) * 
+        ((1.5*w/2.54) + h/2.54 + 4) * 0.15
+    ).toFixed(2);
+    
+    // 双插盒
+    const shuangcha = (
+        (2*w/2.54 + h/2.54 + 4) * 
+        ((l + w)/2.54*2 + 3.5) * 
+        selectedPrice /1000 + 0.1
+    ).toFixed(2);
+    const shuangcha_mold = (
+        (2*w/2.54 + h/2.54 + 4) * 
+        ((l + w)/2.54*2 + 3.5) * 0.2
+    ).toFixed(2);
+
+    let result = `
+        <table>
+            <tr><th>盒型</th><th>报价</th><th>刀模费</th></tr>
+            <tr><td>平口纸箱</td><td>￥${pingkou.toFixed(2)}</td><td>-</td></tr>
+            <tr><td>飞机盒</td><td>￥${feiji}</td><td>￥${feiji_mold}</td></tr>
+            <tr><td>扣底盒</td><td>￥${koudi}</td><td>￥${koudi_mold}</td></tr>
+            <tr><td>双插盒</td><td>￥${shuangcha}</td><td>￥${shuangcha_mold}</td></tr>
+        </table>
+    `;
+    
+    document.getElementById('result').innerHTML = result;
+}
+
+// 初始化
+init3D();
+createPriceTable();
+document.querySelectorAll('input').forEach(i => i.addEventListener('input', calculate));
+</script>
+</body>
+</html>
